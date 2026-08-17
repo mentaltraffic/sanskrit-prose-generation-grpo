@@ -1,0 +1,4 @@
+from skrutable.meter_identification import MeterIdentifier 
+mi = MeterIdentifier()
+meter = mi.identify_meter("aNkolaMkarajaMplakzaMnyagroDaMjambucaamlakam .nIpaMvAnarayassarvepUjayAmAsurAhave ..", from_scheme='SLP', resplit_option='resplit_max')
+meter.meter_label

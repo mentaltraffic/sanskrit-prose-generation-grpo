@@ -1,0 +1,18 @@
+# Core training stack (install a CUDA build of torch that matches your driver first)
+# e.g.  pip install torch --index-url https://download.pytorch.org/whl/cu121
+unsloth
+vllm
+trl>=0.9.0
+transformers
+datasets
+accelerate
+peft
+bitsandbytes
+
+# Reward: syntactic (meter) + semantic (embeddings)
+skrutable
+sentence-transformers
+indic-transliteration
+
+# Logging
+wandb

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Training artifacts / checkpoints
+grpo_checkpoints_*/
+training_checkpoints*/
+chandomitra_*/
+*.safetensors
+*.bin
+outputs/
+wandb/
+
+# Datasets / caches
+dataset/
+.cache/
+*.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
