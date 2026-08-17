@@ -22,6 +22,7 @@ rollouts plus bf16 LoRA training; neither runs meaningfully on CPU.
 |------|---------|
 | `train_grpo_gemma.py` | Main GRPO training script (Gemma 3 4B + `sanganaka/anushtup`). |
 | `rewards.py` | Verifiable reward: skrutable **meter** check + **LaBSE** semantic similarity. Embedder isolated behind `get_embedder()`. |
+| `test_rewards.py` | Sanity check for the reward fns; run before training. |
 | `requirements.txt` | Python dependencies. |
 | `ref/` | Original SFT scripts kept for reference (`train_ddp.py`, `train_ddp_dev.py`, `temp.txt`). |
 
@@ -34,7 +35,18 @@ pip install torch --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
 # 3. Gemma is a gated model on Hugging Face — authenticate:
 export HF_TOKEN=hf_xxx        # or: huggingface-cli login
+# 4. Optional: enable W&B logging (never hardcode the key):
+export WANDB_API_KEY=xxxx     # or: wandb login   (else set report_to="none")
 ```
+
+## Validate rewards before training
+
+```bash
+python test_rewards.py
+```
+
+Confirms skrutable's meter label matches `TARGET_METER` in `rewards.py` and that
+LaBSE loads. If the printed `raw meter_label` differs, update `TARGET_METER`.
 
 ## Run
 

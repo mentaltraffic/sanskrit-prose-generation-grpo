@@ -19,9 +19,11 @@ Launch:  python train_grpo_gemma.py
 import os
 
 # --- wandb -----------------------------------------------------------------
-os.environ["WANDB_API_KEY"] = "c8eab488840dc53cdb56f1d5d38e37d2582f42d3"
-os.environ["WANDB_PROJECT"] = "chandomitra"
-os.environ["WANDB_LOG_MODEL"] = "checkpoint"
+# Do NOT hardcode your API key. Authenticate on the machine instead, e.g.:
+#   export WANDB_API_KEY=xxxx      (or run `wandb login`)
+# Set report_to="none" in GRPOConfig to disable logging entirely.
+os.environ.setdefault("WANDB_PROJECT", "chandomitra")
+os.environ.setdefault("WANDB_LOG_MODEL", "checkpoint")
 
 # --- process / device bookkeeping (same pattern as train_ddp_dev.py) -------
 WORLD_SIZE = int(os.environ.get("WORLD_SIZE", 1))
