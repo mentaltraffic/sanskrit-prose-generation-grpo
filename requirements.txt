@@ -9,9 +9,8 @@ accelerate
 peft
 bitsandbytes
 
-# Reward: syntactic (meter) + semantic (embeddings)
+# Reward: syntactic meter check
 skrutable
-sentence-transformers
 indic-transliteration
 
 # Logging

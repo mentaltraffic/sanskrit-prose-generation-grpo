@@ -1,39 +1,27 @@
 """
-Verifiable reward functions for GRPO training of Sanskrit (anushtup) poetry generation.
+Verifiable reward function for GRPO training of Sanskrit (anushtup) poetry generation.
 
-Two reward signals are combined (TRL sums the reward functions):
+meter_reward -> SYNTACTIC correctness.
+   Uses skrutable's MeterIdentifier (see ref/temp.txt) to check whether the generated
+   verse actually scans as the anushtup / anuStubh meter, grading deterministically from
+   the guru/laghu syllable-weight grid (robust against skrutable's permissive prose label).
 
-1. meter_reward   -> SYNTACTIC correctness.
-                     Uses skrutable's MeterIdentifier (see temp.txt) to check whether the
-                     generated verse actually scans as the anushtup / anuStubh meter.
-
-2. semantic_reward -> SEMANTIC correctness.
-                      Cross-lingual sentence-embedding cosine similarity between the English
-                      input meaning and the generated Sanskrit verse. LaBSE is used by
-                      default but is isolated behind get_embedder() so it can be swapped.
-
-The model is trained/decoded in SLP1 transliteration (same as train_ddp.py), so:
-  - meter checks feed the raw completion to skrutable with from_scheme='SLP'
-  - semantic checks transliterate SLP1 -> Devanagari before embedding.
+The model is trained/decoded in SLP1 transliteration (same as ref/train_ddp.py), so the
+raw completion is fed to skrutable with from_scheme='SLP'.
 """
 
 import re
 import unicodedata
 
-from indic_transliteration import sanscript
-from indic_transliteration.sanscript import transliterate
-
 # ---------------------------------------------------------------------------
-# Config: tweak weights / target meter / embedder here.
+# Config: tweak weights / target meter here.
 # ---------------------------------------------------------------------------
 TARGET_METER = "anustubh"          # skrutable labels look like "anuṣṭubh (…analysis…)"
-EMBED_MODEL_NAME = "sentence-transformers/LaBSE"
 
 METER_WEIGHT = 1.0                 # reward for a PERFECT anuṣṭubh (skrutable is_perfect)
 METER_MAX_PARTIAL = 0.9            # cap for imperfect-but-anuṣṭubh-family verses
 PADA_FULL = 0.25                   # per-pada credit: 8 syllables AND 5-6-7 rule satisfied
 PADA_LEN_ONLY = 0.15              # per-pada credit: correct 8-syllable length only
-SEMANTIC_WEIGHT = 1.0              # scales the [0,1] cosine similarity
 
 # ---------------------------------------------------------------------------
 # skrutable meter identifier (instantiate once, it is relatively heavy).
@@ -127,44 +115,12 @@ def _clean_completion(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Embedder (swappable). Everything embedding-specific lives behind these.
-# ---------------------------------------------------------------------------
-_embedder = None
-
-
-def get_embedder():
-    """Return a singleton sentence-embedding model.
-
-    Swap the implementation here to change the semantic backbone
-    (e.g. intfloat/multilingual-e5-large) without touching the reward logic.
-    """
-    global _embedder
-    if _embedder is None:
-        import torch
-        from sentence_transformers import SentenceTransformer
-
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        _embedder = SentenceTransformer(EMBED_MODEL_NAME, device=device)
-    return _embedder
-
-
-def _cosine_similarity(a_texts, b_texts):
-    """Row-wise cosine similarity between two equally-sized lists of strings."""
-    import numpy as np
-
-    embedder = get_embedder()
-    emb_a = embedder.encode(a_texts, normalize_embeddings=True, convert_to_numpy=True)
-    emb_b = embedder.encode(b_texts, normalize_embeddings=True, convert_to_numpy=True)
-    return np.sum(emb_a * emb_b, axis=1)  # already L2-normalized -> dot == cosine
-
-
-# ---------------------------------------------------------------------------
-# Reward functions (TRL GRPOTrainer signature).
-# Each receives `completions` (list[str] for standard/text prompts) plus any
-# extra dataset columns as keyword args (here: `english`).
+# Reward function (TRL GRPOTrainer signature).
+# Receives `completions` (list[str] for standard/text prompts) plus any extra
+# dataset columns as keyword args (ignored here).
 # ---------------------------------------------------------------------------
 def meter_reward(completions, **kwargs):
-    """Grade each verse by how well it scans as the target meter (see _score_meter_label)."""
+    """Grade each verse by how well it scans as the target meter (see _score_meter_verse)."""
     mi = get_meter_identifier()
     rewards = []
     for comp in completions:
@@ -182,39 +138,5 @@ def meter_reward(completions, **kwargs):
     return rewards
 
 
-def semantic_reward(completions, english=None, **kwargs):
-    """Cross-lingual similarity between the English input and generated Sanskrit.
-
-    Returns SEMANTIC_WEIGHT * max(cosine, 0) in [0, SEMANTIC_WEIGHT].
-    Requires the dataset to expose an `english` column (forwarded by TRL).
-    """
-    if english is None:
-        # Nothing to compare against -> neutral reward.
-        return [0.0 for _ in completions]
-
-    src_texts, gen_texts, valid_idx = [], [], []
-    for i, comp in enumerate(completions):
-        verse_slp = _clean_completion(comp)
-        if not verse_slp:
-            continue
-        try:
-            verse_dev = transliterate(verse_slp, sanscript.SLP1, sanscript.DEVANAGARI)
-        except Exception:
-            verse_dev = verse_slp
-        src_texts.append((english[i] or "").strip())
-        gen_texts.append(verse_dev)
-        valid_idx.append(i)
-
-    rewards = [0.0 for _ in completions]
-    if not valid_idx:
-        return rewards
-
-    sims = _cosine_similarity(src_texts, gen_texts)
-    for idx, sim in zip(valid_idx, sims):
-        rewards[idx] = SEMANTIC_WEIGHT * max(float(sim), 0.0)
-    return rewards
-
-
-# List handed to GRPOTrainer(reward_funcs=...). TRL sums their outputs and
-# logs each one separately (reward/meter_reward, reward/semantic_reward).
-REWARD_FUNCS = [meter_reward, semantic_reward]
+# List handed to GRPOTrainer(reward_funcs=...). Logged as reward/meter_reward.
+REWARD_FUNCS = [meter_reward]

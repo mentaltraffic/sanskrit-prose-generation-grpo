@@ -2,19 +2,15 @@
 Standalone sanity check for the GRPO reward functions.
 
 Run this ONCE on the training server (after `pip install -r requirements.txt`)
-BEFORE launching training, to confirm:
-
-  1. skrutable returns the meter label you expect for a real anushtup verse,
-     and that TARGET_METER in rewards.py matches it.
-  2. The LaBSE semantic reward loads and produces higher similarity for a
-     faithful translation than for an unrelated verse.
+BEFORE launching training, to confirm skrutable grades a perfect anuṣṭubh as 1.0,
+a defective one in (0,1), and garbage as 0.0.
 
 Usage:
     python test_rewards.py
 """
 
 import rewards
-from rewards import meter_reward, semantic_reward, _normalize, get_meter_identifier
+from rewards import meter_reward, get_meter_identifier
 
 
 # A known-PERFECT anuṣṭubh verse in SLP1 (Bhagavad-gītā 1.1).
@@ -67,20 +63,10 @@ def check_meter_reward():
 
 def check_semantic_reward():
     print("=" * 70)
-    print("3) SEMANTIC REWARD (LaBSE ranks faithful > unrelated)")
+    print("3) SEMANTIC REWARD: DISABLED (meter/syntax-only reward)")
     print("=" * 70)
-    # semantic_reward expects the generated verse in SLP1 (it transliterates to
-    # Devanagari internally before embedding), so pass SLP1 here.
-    english = ["I bow to Krishna, the teacher of the whole world"]
-    faithful = ["kfzRaM vande jagadgurum"]     # matches the English meaning
-    unrelated = ["bAlakaH jalaM pibati"]        # "the boy drinks water" (unrelated)
-    r_faithful = semantic_reward(faithful, english=english)[0]
-    r_unrelated = semantic_reward(unrelated, english=english)[0]
-    print(f"  semantic(faithful)   = {r_faithful:.3f}   (expected clearly higher)")
-    print(f"  semantic(unrelated)  = {r_unrelated:.3f}")
-    ok = r_faithful > r_unrelated
-    print(f"  faithful > unrelated : {ok}")
-    return ok
+    print("  Skipped — semantic reward removed; training uses skrutable meter only.")
+    return True
 
 
 if __name__ == "__main__":

@@ -3,9 +3,7 @@ GRPO fine-tuning of Gemma 3 4B for Sanskrit (anushtup) poetry generation.
 
 - Base model : unsloth/gemma-3-4b-it
 - Dataset    : sanganaka/anushtup  (English meaning -> Sanskrit anushtup verse)
-- Reward     : verifiable, combined signal from rewards.py
-                 * skrutable meter check   (syntactic correctness)
-                 * LaBSE embedding sim.    (semantic correctness)
+- Reward     : verifiable skrutable meter check (syntactic correctness) from rewards.py
 
 Scaffolding (env vars / device map / wandb / DDP flags) mirrors train_ddp_dev.py.
 Unlike the SFT scripts, generation uses Unsloth's fast_inference (vLLM) and the
@@ -152,7 +150,7 @@ def build_prompt(example):
     )
     return {
         "prompt": prompt_text,   # TRL feeds this to the model
-        "english": english,      # forwarded to reward fns (semantic reward)
+        "english": english,      # kept for logging/analysis (not used by the reward)
         "reference": reference_slp1,
     }
 

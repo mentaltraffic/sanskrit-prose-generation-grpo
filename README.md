@@ -1,8 +1,8 @@
 # chandomitra — GRPO for Sanskrit anushtup poetry (Gemma 3 4B)
 
 GRPO fine-tuning of **`unsloth/gemma-3-4b-it`** to generate Sanskrit verse in the
-**anushtup** meter that is both **syntactically** (correct meter) and **semantically**
-(faithful to the English meaning) correct.
+**anushtup** meter, rewarded on **syntactic** correctness (the verse must actually
+scan as anuṣṭubh, verified by skrutable).
 
 ## Does this need a GPU?
 
@@ -13,16 +13,14 @@ rollouts plus bf16 LoRA training; neither runs meaningfully on CPU.
   Lower `gpu_memory_utilization`, `per_device_train_batch_size`, and
   `num_generations` in `train_grpo_gemma.py` if you hit OOM.
 - **Comfortable:** 1× A100 40/80 GB or H100.
-- The `sentence-transformers/LaBSE` embedder (semantic reward) also loads on GPU
-  (~1.8 GB); it shares the same device.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `train_grpo_gemma.py` | Main GRPO training script (Gemma 3 4B + `sanganaka/anushtup`). |
-| `rewards.py` | Verifiable reward: skrutable **meter** check + **LaBSE** semantic similarity. Embedder isolated behind `get_embedder()`. |
-| `test_rewards.py` | Sanity check for the reward fns; run before training. |
+| `rewards.py` | Verifiable **meter** reward via skrutable (deterministic anuṣṭubh scan check). |
+| `test_rewards.py` | Sanity check for the reward fn; run before training. |
 | `requirements.txt` | Python dependencies. |
 | `ref/` | Original SFT scripts kept for reference (`train_ddp.py`, `train_ddp_dev.py`, `temp.txt`). |
 
@@ -45,8 +43,9 @@ export WANDB_API_KEY=xxxx     # or: wandb login   (else set report_to="none")
 python test_rewards.py
 ```
 
-Confirms skrutable's meter label matches `TARGET_METER` in `rewards.py` and that
-LaBSE loads. If the printed `raw meter_label` differs, update `TARGET_METER`.
+Confirms skrutable grades a perfect anuṣṭubh (Gītā 1.1) as `1.0`, a defective
+verse in `(0,1)`, and garbage as `0.0`. If the printed `meter_label` no longer
+starts with anuṣṭubh, update `TARGET_METER` in `rewards.py`.
 
 ## Run
 
@@ -60,17 +59,17 @@ doing both rollouts and training. Scale up only after a single-GPU run works.
 
 ## Reward design
 
-The reference SFT scripts (`ref/train_ddp*.py`) do **not** check semantics or
-meter at all — they only imitate a reference verse. GRPO needs a scalar reward,
-so `rewards.py` introduces two, summed by TRL and logged separately:
+The reference SFT scripts (`ref/train_ddp*.py`) do **not** check meter at all —
+they only imitate a reference verse. GRPO needs a scalar reward, so `rewards.py`
+provides one **syntactic** signal (semantics were intentionally dropped):
 
-1. **`meter_reward`** — feeds the generated SLP1 verse to skrutable's
-   `MeterIdentifier` (see `ref/temp.txt`); `+1.0` when it scans as anushtup.
-2. **`semantic_reward`** — transliterates the verse to Devanagari, embeds it and
-   the English input with LaBSE, and rewards their cosine similarity.
+**`meter_reward`** — feeds the generated SLP1 verse to skrutable's
+`MeterIdentifier` (see `ref/temp.txt`) and grades it deterministically from the
+guru/laghu `syllable_weights` grid rather than the permissive prose label:
 
-Tune weights / target meter / embedder at the top of `rewards.py`.
+- `1.0` — skrutable flags a **perfect** anuṣṭubh (`is_perfect`).
+- `(0, 0.9]` — anuṣṭubh family; partial credit per pāda for correct 8-syllable
+  length and the 5th-laghu / 6th-guru / 7th (guru in odd pādas, laghu in even) rule.
+- `0.0` — not anuṣṭubh (or unparsable garbage).
 
-> **Note on LaBSE:** Sanskrit isn't in LaBSE's official language list, so its
-> Sanskrit embeddings are approximate. Swap the model inside `get_embedder()`
-> (e.g. `intfloat/multilingual-e5-large`) without touching the reward logic.
+Tune weights / target meter at the top of `rewards.py`.
