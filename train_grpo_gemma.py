@@ -6,8 +6,9 @@ GRPO fine-tuning of Gemma 4 E4B for Sanskrit (anushtup) poetry generation.
 - Reward     : verifiable skrutable meter check (syntactic correctness) from rewards.py
 
 Scaffolding (env vars / device map / wandb / DDP flags) mirrors train_ddp_dev.py.
-Unlike the SFT scripts, generation uses Unsloth's fast_inference (vLLM) and the
-model is optimised with GRPO instead of cross-entropy on a reference verse.
+Unlike the SFT scripts, the model is optimised with GRPO instead of
+cross-entropy on a reference verse. Gemma 4 uses Transformers generation because
+Unsloth does not currently support fast_inference (vLLM) for this architecture.
 
 NOTE: This requires a CUDA GPU (vLLM + bf16 training). See README.md.
 Launch:  python train_grpo_gemma.py
@@ -62,9 +63,7 @@ model, tokenizer = FastModel.from_pretrained(
     model_name=MODEL_NAME,
     max_seq_length=max_seq_length,
     load_in_4bit=False,
-    fast_inference=True,          # enable vLLM generation for GRPO rollouts
-    max_lora_rank=lora_rank,
-    gpu_memory_utilization=0.6,   # lower if you hit OOM during vLLM init
+    fast_inference=False,         # Gemma 4 is not supported by Unsloth's vLLM path
     device_map=get_device_map(),
     use_gradient_checkpointing="unsloth",
     # token = "hf_...",           # gemma is gated on HF; export HF_TOKEN or pass here
@@ -183,7 +182,7 @@ gradient_accumulation_steps = int(16 / per_device_train_batch_size / WORLD_SIZE)
 
 training_args = GRPOConfig(
     # generation
-    use_vllm=True,
+    use_vllm=False,
     num_generations=num_generations,
     max_prompt_length=max_prompt_length,
     max_completion_length=max_completion_length,
