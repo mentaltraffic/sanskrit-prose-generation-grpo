@@ -70,8 +70,11 @@ model, tokenizer = FastModel.from_pretrained(
     # token = "hf_...",           # gemma is gated on HF; export HF_TOKEN or pass here
 )
 
+# For multimodal checkpoints FastModel hands back a processor; the text tokenizer is nested.
+text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+
 if IS_MAIN_PROCESS:
-    print(tokenizer.padding_side)
+    print(text_tokenizer.padding_side)
 
 model = FastModel.get_peft_model(
     model,
@@ -92,9 +95,9 @@ model = FastModel.get_peft_model(
 )
 
 # GRPO decodes; left padding is correct for generation.
-tokenizer.padding_side = "left"
-if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
+text_tokenizer.padding_side = "left"
+if text_tokenizer.pad_token is None:
+    text_tokenizer.pad_token = text_tokenizer.eos_token
 
 # ---------------------------------------------------------------------------
 # Dataset  (same source + rules prompt as train_ddp.py)

@@ -104,13 +104,20 @@ def _score_meter_verse(verse) -> float:
     return min(METER_MAX_PARTIAL, score)
 
 
+# Gemma 4 wraps reasoning in `<|channel>thought ... <channel|>` before the answer.
+_THOUGHT_BLOCK = re.compile(r"<\|channel>thought\b.*?<channel\|>", re.DOTALL)
+# SLP1 is plain ASCII letters, so any angle-bracket span is a control token.
+_SPECIAL_TOKEN = re.compile(r"<\|?[^<>]*\|?>")
+
+
 def _clean_completion(text: str) -> str:
     """Strip chat/control tokens and surrounding whitespace from a generation."""
     if text is None:
         return ""
-    # Drop anything the model may echo after an end-of-turn marker.
+    # Keep only the answer, dropping any reasoning block that precedes it.
+    text = _THOUGHT_BLOCK.sub("", text)
     text = text.split("<end_of_turn>")[0]
-    text = text.replace("<eos>", "").replace("<pad>", "")
+    text = _SPECIAL_TOKEN.sub("", text)
     return text.strip()
 
 
