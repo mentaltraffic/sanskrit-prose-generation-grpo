@@ -1,5 +1,6 @@
 # Core training stack (install a CUDA build of torch that matches your driver first)
 # e.g.  pip install torch --index-url https://download.pytorch.org/whl/cu121
+# Gemma 4 needs recent unsloth/transformers/vllm; install the latest of each.
 unsloth
 vllm
 trl>=0.9.0

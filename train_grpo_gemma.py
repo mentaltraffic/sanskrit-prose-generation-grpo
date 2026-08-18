@@ -1,7 +1,7 @@
 """
-GRPO fine-tuning of Gemma 3 4B for Sanskrit (anushtup) poetry generation.
+GRPO fine-tuning of Gemma 4 E4B for Sanskrit (anushtup) poetry generation.
 
-- Base model : unsloth/gemma-3-4b-it
+- Base model : unsloth/gemma-4-E4B-it
 - Dataset    : sanganaka/anushtup  (English meaning -> Sanskrit anushtup verse)
 - Reward     : verifiable skrutable meter check (syntactic correctness) from rewards.py
 
@@ -49,15 +49,16 @@ os.environ["UNSLOTH_DISABLE_CACHE"] = "1"
 # ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
-MODEL_NAME = "unsloth/gemma-3-4b-it"
+MODEL_NAME = "unsloth/gemma-4-E4B-it"
 max_seq_length = 2048
 max_prompt_length = 1024          # the rules prompt is long
 max_completion_length = 256       # an anushtup verse is short
 lora_rank = 32
 
-from unsloth import FastLanguageModel
+# Gemma 4 is multimodal, so it loads through FastModel rather than FastLanguageModel.
+from unsloth import FastModel
 
-model, tokenizer = FastLanguageModel.from_pretrained(
+model, tokenizer = FastModel.from_pretrained(
     model_name=MODEL_NAME,
     max_seq_length=max_seq_length,
     load_in_4bit=False,
@@ -72,9 +73,11 @@ model, tokenizer = FastLanguageModel.from_pretrained(
 if IS_MAIN_PROCESS:
     print(tokenizer.padding_side)
 
-model = FastLanguageModel.get_peft_model(
+model = FastModel.get_peft_model(
     model,
     r=lora_rank,
+    finetune_vision_layers=False,     # this task is text-only
+    finetune_language_layers=True,
     target_modules=[
         "q_proj", "k_proj", "v_proj", "o_proj",
         "gate_proj", "up_proj", "down_proj",
@@ -92,10 +95,6 @@ model = FastLanguageModel.get_peft_model(
 tokenizer.padding_side = "left"
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
-
-from unsloth.chat_templates import get_chat_template
-
-tokenizer = get_chat_template(tokenizer, chat_template="gemma-3")
 
 # ---------------------------------------------------------------------------
 # Dataset  (same source + rules prompt as train_ddp.py)
@@ -145,8 +144,9 @@ def build_prompt(example):
     ).strip()
 
     messages = [{"role": "user", "content": human_prompt.format(english)}]
+    # No <|think|> token in the prompt => Gemma 4 answers directly, no reasoning block.
     prompt_text = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+        messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
     )
     return {
         "prompt": prompt_text,   # TRL feeds this to the model
@@ -184,7 +184,10 @@ training_args = GRPOConfig(
     num_generations=num_generations,
     max_prompt_length=max_prompt_length,
     max_completion_length=max_completion_length,
+    # sampling settings recommended by the Gemma 4 model card
     temperature=1.0,
+    top_p=0.95,
+    top_k=64,
     # optimisation
     per_device_train_batch_size=per_device_train_batch_size,
     gradient_accumulation_steps=gradient_accumulation_steps,
@@ -205,8 +208,8 @@ training_args = GRPOConfig(
     save_steps=50,
     save_total_limit=3,
     report_to="wandb",
-    run_name="gemma3_4b_grpo_anushtup",
-    output_dir="grpo_checkpoints_gemma3_4b",
+    run_name="gemma4_e4b_grpo_anushtup",
+    output_dir="grpo_checkpoints_gemma4_e4b",
     seed=3407,
     # DDP
     ddp_find_unused_parameters=False,
@@ -231,10 +234,10 @@ trainer.train()
 
 if IS_MAIN_PROCESS:
     model.save_pretrained_merged(
-        "chandomitra_gemma3_4b_grpo", tokenizer, save_method="merged_16bit"
+        "chandomitra_gemma4_e4b_grpo", tokenizer, save_method="merged_16bit"
     )
     # LoRA-only adapter (small, handy for resuming / sharing):
-    model.save_lora("chandomitra_gemma3_4b_grpo_lora")
+    model.save_lora("chandomitra_gemma4_e4b_grpo_lora")
 
 
 if __name__ == "__main__":

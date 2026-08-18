@@ -1,8 +1,11 @@
-# chandomitra — GRPO for Sanskrit anushtup poetry (Gemma 3 4B)
+# chandomitra — GRPO for Sanskrit anushtup poetry (Gemma 4 E4B)
 
-GRPO fine-tuning of **`unsloth/gemma-3-4b-it`** to generate Sanskrit verse in the
+GRPO fine-tuning of **`unsloth/gemma-4-E4B-it`** to generate Sanskrit verse in the
 **anushtup** meter, rewarded on **syntactic** correctness (the verse must actually
 scan as anuṣṭubh, verified by skrutable).
+
+> Use the safetensors repo above, not `unsloth/gemma-4-E4B-it-GGUF`. GGUF is a
+> llama.cpp inference format and cannot be LoRA-trained.
 
 ## Does this need a GPU?
 
@@ -18,7 +21,7 @@ rollouts plus bf16 LoRA training; neither runs meaningfully on CPU.
 
 | File | Purpose |
 |------|---------|
-| `train_grpo_gemma.py` | Main GRPO training script (Gemma 3 4B + `sanganaka/anushtup`). |
+| `train_grpo_gemma.py` | Main GRPO training script (Gemma 4 E4B + `sanganaka/anushtup`). |
 | `rewards.py` | Verifiable **meter** reward via skrutable (deterministic anuṣṭubh scan check). |
 | `test_rewards.py` | Sanity check for the reward fn; run before training. |
 | `requirements.txt` | Python dependencies. |
