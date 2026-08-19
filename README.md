@@ -123,6 +123,7 @@ python test_rewards.py
 tmux new -s grpo
 cd ~/grpo
 source .venv/bin/activate
+unset GRPO_DEBUG_SHAPES
 export GRPO_WORK_ROOT="/tmp/$USER/grpo"
 export HF_HOME="$GRPO_WORK_ROOT/huggingface"
 export GRPO_OUTPUT_ROOT="$GRPO_WORK_ROOT/outputs"
