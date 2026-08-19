@@ -107,6 +107,27 @@ text_tokenizer.padding_side = "left"
 if text_tokenizer.pad_token is None:
     text_tokenizer.pad_token = text_tokenizer.eos_token
 
+# Gemma 4 indexes hidden_states with logits_to_keep, where None inserts an axis and
+# yields rank-4 logits. Unsloth's patched forward hides the kwarg, so generation
+# leaves it None; pin it to the last position instead.
+import functools
+
+_gen_model = getattr(model, "base_model", model)
+_gen_model = getattr(_gen_model, "model", _gen_model)
+_orig_prepare_inputs = _gen_model.prepare_inputs_for_generation
+
+
+# wraps() keeps the signature that generate() inspects to validate model kwargs.
+@functools.wraps(_orig_prepare_inputs)
+def _prepare_inputs_with_logits_to_keep(*args, **kwargs):
+    model_inputs = _orig_prepare_inputs(*args, **kwargs)
+    if model_inputs.get("logits_to_keep") is None:
+        model_inputs["logits_to_keep"] = 1
+    return model_inputs
+
+
+_gen_model.prepare_inputs_for_generation = _prepare_inputs_with_logits_to_keep
+
 # ---------------------------------------------------------------------------
 # Dataset  (same source + rules prompt as train_ddp.py)
 # ---------------------------------------------------------------------------
@@ -243,6 +264,44 @@ trainer = GRPOTrainer(
 
 if IS_MAIN_PROCESS:
     print("Starting GRPO trainer.train")
+
+# Set GRPO_DEBUG_SHAPES=1 to print tensor ranks at the model boundary.
+if os.environ.get("GRPO_DEBUG_SHAPES") == "1":
+    _inner = getattr(model, "base_model", model)
+    _inner = getattr(_inner, "model", _inner)
+    _calls = {"n": 0}
+
+    def _dbg_pre(_module, _args, kwargs):
+        if _calls["n"] >= 8:
+            return
+        ids = kwargs.get("input_ids")
+        embeds = kwargs.get("inputs_embeds")
+        ltk = kwargs.get("logits_to_keep")
+        print(
+            "[shapes] in : input_ids=",
+            tuple(ids.shape) if isinstance(ids, torch.Tensor) else None,
+            "| inputs_embeds=",
+            tuple(embeds.shape) if isinstance(embeds, torch.Tensor) else None,
+            "| logits_to_keep=",
+            f"{type(ltk).__name__}"
+            + (f"{tuple(ltk.shape)}" if isinstance(ltk, torch.Tensor) else f"({ltk})"),
+            flush=True,
+        )
+
+    def _dbg_post(_module, _args, _kwargs, output):
+        if _calls["n"] >= 8:
+            return
+        _calls["n"] += 1
+        logits = getattr(output, "logits", None)
+        print(
+            "[shapes] out: logits=",
+            tuple(logits.shape) if isinstance(logits, torch.Tensor) else type(logits).__name__,
+            flush=True,
+        )
+
+    _inner.register_forward_pre_hook(_dbg_pre, with_kwargs=True)
+    _inner.register_forward_hook(_dbg_post, with_kwargs=True)
+    print(f"[shapes] hooks attached to {type(_inner).__name__}", flush=True)
 
 trainer.train()
 

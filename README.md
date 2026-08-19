@@ -190,3 +190,36 @@ guru/laghu `syllable_weights` grid rather than the permissive prose label:
 - `0.0` — not anuṣṭubh (or unparsable garbage).
 
 Tune weights / target meter at the top of `rewards.py`.
+
+## Run log
+
+### 2026-08-19 — GRPO rollouts crashed in `torch.multinomial`
+
+Generation failed on the first training step with
+`RuntimeError: prob_dist must be 1 or 2 dim`.
+
+Cause: Gemma 4 slices its hidden states with
+`slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep`.
+Unsloth's patched `forward` hides `logits_to_keep` from the signature that
+Transformers and Unsloth both inspect before injecting a default, so the value
+stayed `None`. Indexing with `None` inserts an axis, so
+`hidden_states[:, None, :]` produced rank-4 logits `(4, 1, 371, 262144)`;
+`logits[:, -1, :]` then left a 3-D tensor where `torch.multinomial` requires 2-D.
+
+Fix: `train_grpo_gemma.py` wraps `prepare_inputs_for_generation` on the inner
+`Gemma4ForConditionalGeneration` and replaces a `None` `logits_to_keep` with `1`.
+The wrapper uses `functools.wraps`; without it `generate()` inspects the
+wrapper's signature and rejects `input_ids` / `attention_mask` as unused kwargs.
+Explicit integer values (TRL's log-probability path) pass through untouched.
+
+Also changed while diagnosing this:
+
+- `processing_class` is now the nested text tokenizer, not the Gemma 4
+  processor. The processor emits `mm_token_type_ids`, which plain `generate()`
+  rejects. The processor is still used for `apply_chat_template` and for saving
+  the merged model.
+- `GRPO_DEBUG_SHAPES=1` enables opt-in hooks that print tensor ranks at the
+  model boundary for the first eight forwards. Inert when unset.
+- `debug_generate.py` reproduces generation without TRL; it was what showed the
+  model itself returns rank-3 logits, isolating the fault to the trainer path.
+
