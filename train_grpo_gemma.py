@@ -10,19 +10,25 @@ Unlike the SFT scripts, the model is optimised with GRPO instead of
 cross-entropy on a reference verse. Gemma 4 uses Transformers generation because
 Unsloth does not currently support fast_inference (vLLM) for this architecture.
 
-NOTE: This requires a CUDA GPU (vLLM + bf16 training). See README.md.
+NOTE: This requires a CUDA GPU (Transformers generation + bf16 training).
+See README.md.
 Launch:  python train_grpo_gemma.py
      or  accelerate launch train_grpo_gemma.py   (single-node; see README caveats)
 """
 
 import os
 
+OUTPUT_ROOT = os.path.abspath(os.environ.get("GRPO_OUTPUT_ROOT", "."))
+os.makedirs(OUTPUT_ROOT, exist_ok=True)
+
 # --- wandb -----------------------------------------------------------------
 # Do NOT hardcode your API key. Authenticate on the machine instead, e.g.:
 #   export WANDB_API_KEY=xxxx      (or run `wandb login`)
-# Set report_to="none" in GRPOConfig to disable logging entirely.
+# Set GRPO_REPORT_TO=wandb to opt in; logging is disabled by default.
+REPORT_TO = os.environ.get("GRPO_REPORT_TO", "none")
 os.environ.setdefault("WANDB_PROJECT", "chandomitra")
 os.environ.setdefault("WANDB_LOG_MODEL", "checkpoint")
+os.environ.setdefault("WANDB_DIR", os.path.join(OUTPUT_ROOT, "wandb"))
 
 # --- process / device bookkeeping (same pattern as train_ddp_dev.py) -------
 WORLD_SIZE = int(os.environ.get("WORLD_SIZE", 1))
@@ -41,6 +47,8 @@ def get_device_map() -> "str | dict[str, int]":
 
 if IS_MAIN_PROCESS:
     print(f"gpus available: {WORLD_SIZE}")
+    print(f"training outputs: {OUTPUT_ROOT}")
+    print(f"reporting integration: {REPORT_TO}")
 
 import torch
 
@@ -53,7 +61,7 @@ os.environ["UNSLOTH_DISABLE_CACHE"] = "1"
 MODEL_NAME = "unsloth/gemma-4-E4B-it"
 max_seq_length = 2048
 max_prompt_length = 1024          # the rules prompt is long
-max_completion_length = 256       # an anushtup verse is short
+max_completion_length = 128       # enough for a 32-syllable anushtup verse
 lora_rank = 32
 
 # Gemma 4 is multimodal, so it loads through FastModel rather than FastLanguageModel.
@@ -63,10 +71,11 @@ model, tokenizer = FastModel.from_pretrained(
     model_name=MODEL_NAME,
     max_seq_length=max_seq_length,
     load_in_4bit=False,
+    use_safetensors=True,
     fast_inference=False,         # Gemma 4 is not supported by Unsloth's vLLM path
     device_map=get_device_map(),
     use_gradient_checkpointing="unsloth",
-    # token = "hf_...",           # gemma is gated on HF; export HF_TOKEN or pass here
+    # token = "hf_...",           # optional for this public checkpoint
 )
 
 # For multimodal checkpoints FastModel hands back a processor; the text tokenizer is nested.
@@ -176,19 +185,21 @@ from unsloth import is_bfloat16_supported
 
 from rewards import REWARD_FUNCS
 
-per_device_train_batch_size = 4          # must be divisible by num_generations
+per_device_train_batch_size = 1
 num_generations = 4                      # completions sampled per prompt
+generation_batch_size = num_generations * WORLD_SIZE
 gradient_accumulation_steps = int(16 / per_device_train_batch_size / WORLD_SIZE) or 1
 
 training_args = GRPOConfig(
     # generation
     use_vllm=False,
     num_generations=num_generations,
+    generation_batch_size=generation_batch_size,
     max_prompt_length=max_prompt_length,
     max_completion_length=max_completion_length,
-    # sampling settings recommended by the Gemma 4 model card
+    # Avoid top-p's full-vocabulary sort, which peaks above 44 GB on Gemma 4.
     temperature=1.0,
-    top_p=0.95,
+    top_p=1.0,
     top_k=64,
     # optimisation
     per_device_train_batch_size=per_device_train_batch_size,
@@ -209,9 +220,9 @@ training_args = GRPOConfig(
     save_strategy="steps",
     save_steps=50,
     save_total_limit=3,
-    report_to="wandb",
+    report_to=REPORT_TO,
     run_name="gemma4_e4b_grpo_anushtup",
-    output_dir="grpo_checkpoints_gemma4_e4b",
+    output_dir=os.path.join(OUTPUT_ROOT, "grpo_checkpoints_gemma4_e4b"),
     seed=3407,
     # DDP
     ddp_find_unused_parameters=False,
@@ -221,7 +232,8 @@ training_args = GRPOConfig(
 
 trainer = GRPOTrainer(
     model=model,
-    processing_class=tokenizer,
+    # The Gemma 4 processor emits multimodal ids/extra axes that break text-only sampling.
+    processing_class=text_tokenizer,
     reward_funcs=REWARD_FUNCS,
     args=training_args,
     train_dataset=train_dataset,
@@ -236,10 +248,12 @@ trainer.train()
 
 if IS_MAIN_PROCESS:
     model.save_pretrained_merged(
-        "chandomitra_gemma4_e4b_grpo", tokenizer, save_method="merged_16bit"
+        os.path.join(OUTPUT_ROOT, "chandomitra_gemma4_e4b_grpo"),
+        tokenizer,
+        save_method="merged_16bit",
     )
     # LoRA-only adapter (small, handy for resuming / sharing):
-    model.save_lora("chandomitra_gemma4_e4b_grpo_lora")
+    model.save_lora(os.path.join(OUTPUT_ROOT, "chandomitra_gemma4_e4b_grpo_lora"))
 
 
 if __name__ == "__main__":
