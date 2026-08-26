@@ -194,6 +194,24 @@ Tune weights / target meter at the top of `rewards.py`.
 
 ## Run log
 
+### 2026-08-26 — Training completed successfully
+
+The three-epoch run completed all 6,231 steps and saved these artifacts on the
+Sanskrit server:
+
+| Artifact | Server path |
+|----------|-------------|
+| Merged 16-bit model (use for inference) | `/tmp/monal-pg/grpo/outputs/chandomitra_gemma4_e4b_grpo` |
+| LoRA adapter (use with the original base model) | `/tmp/monal-pg/grpo/outputs/chandomitra_gemma4_e4b_grpo_lora` |
+| Training checkpoints | `/tmp/monal-pg/grpo/outputs/grpo_checkpoints_gemma4_e4b` |
+| Training log | `/tmp/monal-pg/grpo/outputs/grpo_training.log` |
+
+The LoRA adapter was preserved locally in
+`chandomitra_gemma4_e4b_grpo_lora/`, and the log was preserved as
+`grpo_training.log` in this repository. The merged model has not been copied
+locally. The server paths are under `/tmp` and may disappear after a reboot or
+periodic cleanup.
+
 ### 2026-08-19 — GRPO rollouts crashed in `torch.multinomial`
 
 Generation failed on the first training step with
