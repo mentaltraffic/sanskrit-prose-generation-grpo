@@ -5,7 +5,7 @@ import getpass
 import os
 
 from inference_utils import generate_completions, load_model
-from rewards import meter_reward
+from rewards import is_slp1_format, normalize_completion_to_slp1, normalized_meter_reward
 
 
 def default_model_path():
@@ -46,10 +46,16 @@ def generate_and_print(model, processor, text_tokenizer, english, args):
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
     )
-    rewards = meter_reward(completions)
+    rewards = normalized_meter_reward(completions)
     for index, (completion, reward) in enumerate(zip(completions, rewards), start=1):
-        print(f"\n[{index}] meter_reward={reward:.3f}")
+        slp1_candidate = is_slp1_format(completion)
+        print(
+            f"\n[{index}] normalized_meter_reward={reward:.3f} "
+            f"slp1_format={'yes' if slp1_candidate else 'no'}"
+        )
         print(completion)
+        if not slp1_candidate:
+            print(f"SLP1: {normalize_completion_to_slp1(completion)}")
 
 
 def main():

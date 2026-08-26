@@ -10,7 +10,14 @@ Usage:
 """
 
 import rewards
-from rewards import meter_reward, get_meter_identifier
+from rewards import (
+    get_meter_identifier,
+    is_slp1_format,
+    legacy_training_meter_reward,
+    meter_reward,
+    normalize_completion_to_slp1,
+    normalized_meter_reward,
+)
 
 
 # A known-PERFECT anuṣṭubh verse in SLP1 (Bhagavad-gītā 1.1).
@@ -25,6 +32,10 @@ GOOD_VERSE = (
 )
 # Obviously non-metrical junk.
 BAD_VERSE = "namaste world this is not a valid sanskrit verse at all"
+PERFECT_VERSE_IAST = (
+    "dharmakṣetre kurukṣetre samavetā yuyutsavaḥ "
+    "māmakāḥ pāṇḍavāścaiva kimakurvata sañjaya"
+)
 
 
 def check_meter_label():
@@ -69,13 +80,34 @@ def check_semantic_reward():
     return True
 
 
+def check_transliteration_normalization():
+    print("=" * 70)
+    print("4) TRANSLITERATION-NORMALIZED EVALUATION")
+    print("=" * 70)
+    converted = normalize_completion_to_slp1(PERFECT_VERSE_IAST)
+    strict_score = meter_reward([PERFECT_VERSE_IAST])[0]
+    legacy_score = legacy_training_meter_reward([PERFECT_VERSE_IAST])[0]
+    score = normalized_meter_reward([PERFECT_VERSE_IAST])[0]
+    print(f"  IAST is strict SLP1 : {is_slp1_format(PERFECT_VERSE_IAST)}")
+    print(f"  converted SLP1      : {converted}")
+    print(f"  strict reward       : {strict_score:.3f}")
+    print(f"  legacy raw reward   : {legacy_score:.3f}")
+    print(f"  normalized reward   : {score:.3f}")
+    return (
+        not is_slp1_format(PERFECT_VERSE_IAST)
+        and strict_score == 0.0
+        and score == 1.0
+    )
+
+
 if __name__ == "__main__":
     ok_label = check_meter_label()
     ok_meter = check_meter_reward()
     ok_sem = check_semantic_reward()
+    ok_normalization = check_transliteration_normalization()
 
     print("=" * 70)
-    if ok_label and ok_meter and ok_sem:
+    if ok_label and ok_meter and ok_sem and ok_normalization:
         print("RESULT: rewards look good — safe to start training.")
     else:
         print("RESULT: fix the issues above (esp. TARGET_METER) before training.")

@@ -121,28 +121,67 @@ def _clean_completion(text: str) -> str:
     return text.strip()
 
 
+def is_slp1_format(text: str) -> bool:
+    """Return whether a nonempty completion is an ASCII SLP1 candidate."""
+    cleaned = _clean_completion(text)
+    return bool(cleaned) and cleaned.isascii()
+
+
+def normalize_completion_to_slp1(text: str) -> str:
+    """Convert non-ASCII IAST output to SLP1 for meter-only evaluation."""
+    cleaned = _clean_completion(text)
+    if not cleaned or cleaned.isascii():
+        return cleaned
+
+    from indic_transliteration import sanscript
+    from indic_transliteration.sanscript import transliterate
+
+    normalized = unicodedata.normalize("NFC", cleaned)
+    return transliterate(normalized, sanscript.IAST, sanscript.SLP1)
+
+
+def _meter_scores(completions, normalize_transliteration=False):
+    mi = get_meter_identifier()
+    rewards = []
+    for completion in completions:
+        try:
+            verse = (
+                normalize_completion_to_slp1(completion)
+                if normalize_transliteration
+                else _clean_completion(completion)
+            )
+            result = mi.identify_meter(
+                verse, from_scheme="SLP", resplit_option="resplit_max"
+            )
+            score = _score_meter_verse(result) if verse else 0.0
+        except Exception:
+            score = 0.0
+        rewards.append(score)
+    return rewards
+
+
 # ---------------------------------------------------------------------------
 # Reward function (TRL GRPOTrainer signature).
 # Receives `completions` (list[str] for standard/text prompts) plus any extra
 # dataset columns as keyword args (ignored here).
 # ---------------------------------------------------------------------------
 def meter_reward(completions, **kwargs):
-    """Grade each verse by how well it scans as the target meter (see _score_meter_verse)."""
-    mi = get_meter_identifier()
-    rewards = []
-    for comp in completions:
-        verse = _clean_completion(comp)
-        score = 0.0
-        if verse:
-            try:
-                result = mi.identify_meter(
-                    verse, from_scheme="SLP", resplit_option="resplit_max"
-                )
-                score = _score_meter_verse(result)
-            except Exception:
-                score = 0.0
-        rewards.append(score)
-    return rewards
+    """Grade SLP1 verse meter, assigning zero to non-ASCII transliteration."""
+    scores = _meter_scores(completions)
+    return [
+        score if is_slp1_format(completion) else 0.0
+        for completion, score in zip(completions, scores)
+    ]
+
+
+def legacy_training_meter_reward(completions, **kwargs):
+    """Reproduce the completed run's reward, which assumed every output was SLP1."""
+    return _meter_scores(completions)
+
+
+def normalized_meter_reward(completions, **kwargs):
+    """Evaluation only: score meter after converting non-ASCII IAST to SLP1."""
+    return _meter_scores(completions, normalize_transliteration=True)
 
 
 # List handed to GRPOTrainer(reward_funcs=...). Logged as reward/meter_reward.

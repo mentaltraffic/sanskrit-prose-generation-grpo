@@ -10,7 +10,11 @@ import statistics
 from pathlib import Path
 
 from inference_utils import generate_completions, load_model
-from rewards import meter_reward
+from rewards import (
+    is_slp1_format,
+    legacy_training_meter_reward,
+    normalized_meter_reward,
+)
 
 
 def default_model_path():
@@ -105,7 +109,9 @@ def main():
 
     print(f"Loading model: {args.model}", flush=True)
     model, processor, text_tokenizer = load_model(args.model)
-    all_rewards = []
+    all_legacy_rewards = []
+    all_normalized_rewards = []
+    all_slp1_formats = []
 
     with output_path.open("w", encoding="utf-8") as output_file:
         for prompt_index, evaluation_row in enumerate(evaluation_rows):
@@ -120,11 +126,21 @@ def main():
                 max_new_tokens=args.max_new_tokens,
                 temperature=args.temperature,
             )
-            rewards = meter_reward(completions)
-            all_rewards.extend(rewards)
+            legacy_rewards = legacy_training_meter_reward(completions)
+            normalized_rewards = normalized_meter_reward(completions)
+            slp1_formats = [is_slp1_format(completion) for completion in completions]
+            all_legacy_rewards.extend(legacy_rewards)
+            all_normalized_rewards.extend(normalized_rewards)
+            all_slp1_formats.extend(slp1_formats)
 
-            for generation_index, (completion, reward) in enumerate(
-                zip(completions, rewards), start=1
+            for generation_index, (
+                completion,
+                legacy_reward,
+                normalized_reward,
+                slp1_format,
+            ) in enumerate(
+                zip(completions, legacy_rewards, normalized_rewards, slp1_formats),
+                start=1,
             ):
                 row = {
                     "label": args.label,
@@ -135,14 +151,16 @@ def main():
                     "english": english,
                     "reference_sanskrit": evaluation_row["reference_sanskrit"],
                     "completion": completion,
-                    "meter_reward": reward,
+                    "slp1_format": slp1_format,
+                    "legacy_training_meter_reward": legacy_reward,
+                    "normalized_meter_reward": normalized_reward,
                 }
                 output_file.write(json.dumps(row, ensure_ascii=False) + "\n")
             output_file.flush()
-            running_mean = statistics.fmean(all_rewards)
+            running_mean = statistics.fmean(all_normalized_rewards)
             print(
                 f"[{prompt_index + 1}/{len(evaluation_rows)}] "
-                f"mean_reward={running_mean:.4f}",
+                f"mean_normalized_reward={running_mean:.4f}",
                 flush=True,
             )
 
@@ -152,11 +170,22 @@ def main():
         "source": source,
         "source_fingerprint": fingerprint,
         "prompts": len(evaluation_rows),
-        "generations": len(all_rewards),
-        "mean_meter_reward": statistics.fmean(all_rewards),
-        "perfect_rate": sum(score == 1.0 for score in all_rewards) / len(all_rewards),
-        "nonzero_rate": sum(score > 0.0 for score in all_rewards) / len(all_rewards),
-        "zero_rate": sum(score == 0.0 for score in all_rewards) / len(all_rewards),
+        "generations": len(all_normalized_rewards),
+        "slp1_format_rate": sum(all_slp1_formats) / len(all_slp1_formats),
+        "mean_legacy_training_meter_reward": statistics.fmean(all_legacy_rewards),
+        "mean_normalized_meter_reward": statistics.fmean(all_normalized_rewards),
+        "normalized_perfect_rate": sum(
+            score == 1.0 for score in all_normalized_rewards
+        )
+        / len(all_normalized_rewards),
+        "normalized_nonzero_rate": sum(
+            score > 0.0 for score in all_normalized_rewards
+        )
+        / len(all_normalized_rewards),
+        "normalized_zero_rate": sum(
+            score == 0.0 for score in all_normalized_rewards
+        )
+        / len(all_normalized_rewards),
         "seed": args.seed,
     }
     summary_path = output_path.with_suffix(".summary.json")
