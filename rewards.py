@@ -109,6 +109,9 @@ _THOUGHT_BLOCK = re.compile(r"<\|channel>thought\b.*?<channel\|>", re.DOTALL)
 # SLP1 is plain ASCII letters, so any angle-bracket span is a control token.
 _SPECIAL_TOKEN = re.compile(r"<\|?[^<>]*\|?>")
 
+# ISO-15919 spellings the IAST transliteration table would otherwise leave intact.
+_IAST_VARIANTS = str.maketrans({"\u1e41": "\u1e43", "\u1e40": "\u1e42"})
+
 
 def _clean_completion(text: str) -> str:
     """Strip chat/control tokens and surrounding whitespace from a generation."""
@@ -137,6 +140,8 @@ def normalize_completion_to_slp1(text: str) -> str:
     from indic_transliteration.sanscript import transliterate
 
     normalized = unicodedata.normalize("NFC", cleaned)
+    # Models mix ISO-15919 dot-above anusvara with IAST's dot-below form.
+    normalized = normalized.translate(_IAST_VARIANTS)
     return transliterate(normalized, sanscript.IAST, sanscript.SLP1)
 
 

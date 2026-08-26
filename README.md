@@ -276,6 +276,25 @@ Tune weights / target meter at the top of `rewards.py`.
 
 ## Run log
 
+### 2026-08-26 — Trained model emits IAST, not SLP1
+
+Post-training inference showed the model generating IAST (`uṣaḥ sūryaṃ`) rather
+than the SLP1 (`uzaH sUryaM`) the prompt asks for. `meter_reward` passed that
+text to skrutable with `from_scheme='SLP'`, so diacritics were misread and the
+verse still collected partial credit.
+
+`test_rewards.py` check 4 quantifies the loophole on a known-perfect Gītā 1.1
+verse written in IAST: legacy reward `0.450`, strict reward `0.000`, normalized
+reward `1.000`. Training rewards from the completed run are therefore inflated
+and cannot be read as meter quality.
+
+Fixes:
+
+- `meter_reward` (training) now returns `0.0` for non-ASCII output.
+- `normalized_meter_reward` (evaluation only) transliterates IAST to SLP1 first.
+- `legacy_training_meter_reward` preserves the old behaviour for comparison.
+- Evaluation reports `slp1_format_rate` alongside the normalized meter scores.
+
 ### 2026-08-26 — Training completed successfully
 
 The three-epoch run completed all 6,231 steps and saved these artifacts on the

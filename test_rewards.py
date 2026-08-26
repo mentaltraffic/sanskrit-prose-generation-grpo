@@ -93,10 +93,15 @@ def check_transliteration_normalization():
     print(f"  strict reward       : {strict_score:.3f}")
     print(f"  legacy raw reward   : {legacy_score:.3f}")
     print(f"  normalized reward   : {score:.3f}")
+
+    # The model also emits ISO-15919 dot-above anusvara, which plain IAST leaves intact.
+    iso_converted = normalize_completion_to_slp1("kamalaṁ jāgrahanti śayanaṁ")
+    print(f"  ISO anusvara -> SLP1: {iso_converted}")
     return (
         not is_slp1_format(PERFECT_VERSE_IAST)
         and strict_score == 0.0
         and score == 1.0
+        and iso_converted.isascii()
     )
 
 
