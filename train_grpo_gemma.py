@@ -135,7 +135,7 @@ from datasets import load_dataset
 from indic_transliteration import sanscript
 from indic_transliteration.sanscript import transliterate
 
-from inference_utils import HUMAN_PROMPT
+from inference_utils import build_prompt as build_prompt_text
 
 dataset = load_dataset("sanganaka/anushtup")
 
@@ -147,19 +147,14 @@ def build_prompt(example):
         example["Sanskrit"], sanscript.DEVANAGARI, sanscript.IAST
     ).strip()
 
-    messages = [{"role": "user", "content": HUMAN_PROMPT.format(english)}]
-    # No <|think|> token in the prompt => Gemma 4 answers directly, no reasoning block.
-    prompt_text = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
-    )
     return {
-        "prompt": prompt_text,   # TRL feeds this to the model
+        # Built by inference_utils so training and evaluation cannot drift apart.
+        "prompt": build_prompt_text(tokenizer, english),
         "english": english,      # kept for logging/analysis (not used by the reward)
         "reference": reference,
     }
 
 
-keep_cols = ["prompt", "english", "reference"]
 train_dataset = dataset["train"].map(
     build_prompt, remove_columns=dataset["train"].column_names
 )
@@ -183,6 +178,11 @@ num_generations = 4                      # completions sampled per prompt
 generation_batch_size = num_generations * WORLD_SIZE
 gradient_accumulation_steps = int(16 / per_device_train_batch_size / WORLD_SIZE) or 1
 
+# One generation round per prompt without vLLM, so a full epoch over the 8,306-row
+# train split is ~8.3k rollouts. Cap the budget instead of walking off a cliff.
+num_train_epochs = float(os.environ.get("GRPO_EPOCHS", "1"))
+max_steps = int(os.environ.get("GRPO_MAX_STEPS", "-1"))
+
 training_args = GRPOConfig(
     # generation
     use_vllm=False,
@@ -197,7 +197,8 @@ training_args = GRPOConfig(
     # optimisation
     per_device_train_batch_size=per_device_train_batch_size,
     gradient_accumulation_steps=gradient_accumulation_steps,
-    num_train_epochs=3,
+    num_train_epochs=num_train_epochs,
+    max_steps=max_steps,
     learning_rate=5e-6,
     warmup_ratio=0.08,
     lr_scheduler_type="cosine",

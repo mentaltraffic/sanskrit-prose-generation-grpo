@@ -3,8 +3,21 @@
 import functools
 import os
 
+from rewards import TARGET_SCHEME
+
 os.environ.setdefault("UNSLOTH_COMPILE_DISABLE", "1")
 os.environ.setdefault("UNSLOTH_DISABLE_CACHE", "1")
+
+# HUMAN_PROMPT spells its vowel/anusvara rules in this scheme's letters. The 2026-08-26
+# run was wrecked by a prompt that asked for one scheme while the reward paid for
+# another, so refuse to start rather than let the two drift apart again.
+PROMPT_SCHEME = "IAST"
+if PROMPT_SCHEME != TARGET_SCHEME:
+    raise RuntimeError(
+        f"HUMAN_PROMPT is written for {PROMPT_SCHEME} but rewards.TARGET_SCHEME is "
+        f"{TARGET_SCHEME}. Rewrite the prompt's rules/letters for {TARGET_SCHEME} "
+        f"and update PROMPT_SCHEME."
+    )
 
 HUMAN_PROMPT = """
 ### INSTRUCTION:
@@ -20,16 +33,18 @@ The seventh syllable of the second and the fourth pada must be HRASVA
 The seventh letter of the first and third paada must be DEERGHA
 
 Syllable Rules:
-LAGHU vowels: a, i, u, f, x
-GURU vowels: A, I, U, F, X, e, E, o, O
-HRASVA vowels: a, i, u, f, x
-DEERGHA vowels: A, I, U, F, X, e, E, o, O
+LAGHU vowels: a, i, u, ṛ, ḷ
+GURU vowels: ā, ī, ū, ṝ, ḹ, e, ai, o, au
+HRASVA vowels: a, i, u, ṛ, ḷ
+DEERGHA vowels: ā, ī, ū, ṝ, ḹ, e, ai, o, au
 
 Syllable is marked laghu, guru and hrasva, deergha based on the vowel it contains.
-Syllable containing anusvAra("M") or visarga("H") is always marked as guru.
-Syllable that is followed by a conjunct consonant (saMyuktAkzara) is always marked guru.
+Syllable containing anusvāra("ṃ") or visarga("ḥ") is always marked as guru.
+Syllable that is followed by a conjunct consonant (saṃyuktākṣara) is always marked guru.
 
-Respond ONLY with the Sanskrit verse in SLP1 transliteration, nothing else.
+Respond ONLY with the Sanskrit verse in IAST transliteration, in lower case, using
+only these letters: a ā i ī u ū ṛ ṝ ḷ ḹ e ai o au ṃ ḥ k kh g gh ṅ c ch j jh ñ ṭ ṭh
+ḍ ḍh ṇ t th d dh n p ph b bh m y r l v ś ṣ s h. Nothing else.
 
 ### INPUT:
 {}

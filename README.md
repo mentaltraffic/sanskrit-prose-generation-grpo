@@ -61,6 +61,11 @@ starts with anuṣṭubh, update `TARGET_METER` in `rewards.py`.
 python train_grpo_gemma.py
 ```
 
+The train split has 8,306 prompts and rollouts run through Transformers
+`generate()` (no vLLM), so one epoch is ~8,300 generation rounds. The default is
+**one** epoch; override the budget with `GRPO_EPOCHS` or cap it hard with
+`GRPO_MAX_STEPS` (optimizer steps, `-1` disables the cap).
+
 Single-node multi-GPU is possible via `accelerate launch`, but the simplest
 reliable setup is **one process with one GPU** doing both rollouts and training.
 Scale up only after a single-GPU run works.
