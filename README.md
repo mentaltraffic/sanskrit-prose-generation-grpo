@@ -24,7 +24,6 @@ rollouts plus bf16 LoRA training; neither runs meaningfully on CPU.
 | `infer_grpo.py` | Interactive or one-shot generation with meter scoring. |
 | `evaluate_grpo.py` | Reproducible batch meter evaluation that writes JSONL and a summary. |
 | `inference_utils.py` | Shared Gemma 4 loading, prompt, and generation helpers. |
-| `eval_prompts.txt` | English prompts reserved for post-training evaluation. |
 | `rewards.py` | Verifiable **meter** reward via skrutable (deterministic anuṣṭubh scan check). |
 | `test_rewards.py` | Sanity check for the reward fn; run before training. |
 | `requirements.txt` | Python dependencies. |
@@ -70,7 +69,7 @@ Upload the inference files from local PowerShell:
 
 ```powershell
 scp -J monal-pg@cnerg.iitkgp.ac.in:8201 -P 8201 `
-  infer_grpo.py evaluate_grpo.py inference_utils.py eval_prompts.txt `
+  infer_grpo.py evaluate_grpo.py inference_utils.py `
   monal-pg@10.5.30.41:~/grpo/
 ```
 
@@ -103,9 +102,14 @@ python -u evaluate_grpo.py \
   --label trained_smoke --limit 1 --num-generations 1
 ```
 
+The evaluator loads the official `sanganaka/anushtup` `test` split, which has
+1,421 rows and was not used for GRPO optimization. Blank English rows are
+discarded, and 100 rows are sampled deterministically by default. The reference
+Sanskrit verse is retained in each JSONL result for inspection.
+
 For the actual comparison, evaluate the trained and original models separately
-with the same prompts, sampling settings, and seeds. Running them sequentially
-avoids holding both models in GPU memory:
+with the same official prompts, sampling settings, and seeds. Running them
+sequentially avoids holding both models in GPU memory:
 
 ```bash
 python -u evaluate_grpo.py \
@@ -120,7 +124,8 @@ cat "$GRPO_OUTPUT_ROOT/evals/trained.summary.json"
 cat "$GRPO_OUTPUT_ROOT/evals/base.summary.json"
 ```
 
-Each full command samples four verses for each of the 20 prompts. Compare
+Each command samples four verses for each of the same 100 test prompts. Pass
+`--limit 0` to evaluate every nonblank prompt in the test split. Compare
 `mean_meter_reward`, `perfect_rate`, and `nonzero_rate`. This evaluates meter
 only; semantic fidelity still requires a separate human or semantic evaluation.
 The detailed rows and summaries are written under `$GRPO_OUTPUT_ROOT/evals/`.

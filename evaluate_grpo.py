@@ -59,14 +59,18 @@ def load_evaluation_rows(args):
         from datasets import load_dataset
 
         dataset = load_dataset(args.dataset, split=args.split)
-        rows = [
-            {
-                "source_index": index,
-                "english": example["English"].strip(),
-                "reference_sanskrit": example["Sanskrit"].strip(),
-            }
-            for index, example in enumerate(dataset)
-        ]
+        rows = []
+        for index, example in enumerate(dataset):
+            english = example["English"].strip()
+            if not english:
+                continue
+            rows.append(
+                {
+                    "source_index": index,
+                    "english": english,
+                    "reference_sanskrit": example["Sanskrit"].strip(),
+                }
+            )
         source = f"{args.dataset}:{args.split}"
         fingerprint = dataset._fingerprint
 

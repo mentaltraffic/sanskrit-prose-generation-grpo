@@ -70,6 +70,7 @@ def load_model(model_name):
         use_safetensors=True,
         fast_inference=False,
         device_map="auto",
+        fix_mistral_regex=True,
     )
     text_tokenizer = getattr(processor, "tokenizer", processor)
     text_tokenizer.padding_side = "left"
