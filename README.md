@@ -276,6 +276,34 @@ Tune weights / target meter at the top of `rewards.py`.
 
 ## Run log
 
+### 2026-08-26 — Held-out evaluation: GRPO optimised the scan bug
+
+100 prompts from the official `sanganaka/anushtup` `test` split (fingerprint
+`1e710755685ca5de`), 4 samples each, seed 3407, trained vs. the original
+checkpoint:
+
+| Metric | Base | Trained | Change |
+|--------|------|---------|--------|
+| `mean_legacy_training_meter_reward` (hackable) | 0.048 | 0.480 | 10× |
+| `mean_normalized_meter_reward` (honest) | 0.246 | 0.299 | +0.053 |
+| `normalized_nonzero_rate` | 0.488 | 0.550 | +0.062 |
+| `normalized_perfect_rate` | 0.000 | 0.000 | none |
+| `slp1_format_rate` | 0.015 | 0.000 | regressed |
+
+The reward the trainer could see rose 10×; the reward that reflects actual
+metre rose 21%. That ratio is the signature of reward hacking. Both models
+emit IAST, so the trained model did not learn SLP1 — it learned to emit IAST
+that scans well *when misparsed as SLP1*.
+
+Neither model produced a single perfect anuṣṭubh in 400 generations, and
+training removed the small SLP1 ability the base model had (1.5% → 0%),
+because IAST paid better under the broken reward.
+
+Caveat: with 100 prompts × 4 correlated samples and reward std ≈ 0.3, the
++0.053 difference is roughly 1.5–2 standard errors. Both runs used identical
+prompts and seeds, so a paired per-prompt test on the JSONL rows would be more
+conclusive than comparing means.
+
 ### 2026-08-26 — Trained model emits IAST, not SLP1
 
 Post-training inference showed the model generating IAST (`uṣaḥ sūryaṃ`) rather
@@ -287,6 +315,31 @@ verse still collected partial credit.
 verse written in IAST: legacy reward `0.450`, strict reward `0.000`, normalized
 reward `1.000`. Training rewards from the completed run are therefore inflated
 and cannot be read as meter quality.
+
+Root cause — three decisions that compounded:
+
+1. **The SLP1 target lost its teacher.** `ref/train_ddp.py` put the SLP1 verse
+   in the assistant turn, so cross-entropy taught the scheme directly. The GRPO
+   script keeps `reference_slp1` only "for logging/analysis (not used by the
+   reward)", leaving a scalar reward as the sole signal.
+2. **The reward asserted the scheme instead of checking it.** Passing
+   `from_scheme='SLP'` tells skrutable "this is SLP1". Given IAST it does not
+   error — it misreads the diacritics and still returns an anuṣṭubh-family
+   label with partial credit.
+3. **Gemma's prior is IAST.** IAST vastly outnumbers SLP1 in pretraining data,
+   so IAST was the default behaviour, and nothing ever made it costly.
+
+A second, smaller instance of the same class of bug: the model also emits
+ISO-15919 dot-above anusvāra (`ṁ`, U+1E41) where IAST uses dot-below (`ṃ`,
+U+1E43). The IAST→SLP1 table left `ṁ` untouched, so those verses stayed
+mis-scanned even after normalisation. `_IAST_VARIANTS` in `rewards.py` maps it.
+
+The scheme is **not** centrally configured. It is hardcoded in `rewards.py`
+(`from_scheme`, the format gate, the conversion), in the prompt text and
+dataset conversion of `train_grpo_gemma.py`, in `inference_utils.py`, and in
+`test_rewards.py`. The rules prompt is duplicated verbatim between
+`train_grpo_gemma.py` and `inference_utils.py`; editing one silently desyncs
+evaluation from training.
 
 Fixes:
 
