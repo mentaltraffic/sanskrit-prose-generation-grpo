@@ -41,6 +41,12 @@ def _patch_generation(model):
     """Prevent Gemma 4 from adding an extra logits dimension during generation."""
     generation_model = getattr(model, "base_model", model)
     generation_model = getattr(generation_model, "model", generation_model)
+    if not hasattr(generation_model, "prepare_inputs_for_generation"):
+        generation_model = model
+    if not hasattr(generation_model, "prepare_inputs_for_generation"):
+        raise TypeError(
+            f"{type(model).__name__} does not expose prepare_inputs_for_generation"
+        )
     original_prepare_inputs = generation_model.prepare_inputs_for_generation
 
     @functools.wraps(original_prepare_inputs)

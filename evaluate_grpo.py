@@ -4,6 +4,7 @@ import argparse
 import getpass
 import json
 import os
+import random
 import re
 import statistics
 from pathlib import Path
@@ -25,9 +26,18 @@ def parse_args():
     )
     parser.add_argument("--model", default=default_model_path())
     parser.add_argument("--label", default="trained")
-    parser.add_argument("--prompts", default="eval_prompts.txt")
+    parser.add_argument("--dataset", default="sanganaka/anushtup")
+    parser.add_argument("--split", default="test")
+    parser.add_argument(
+        "--prompts", help="Optional text file to use instead of the dataset split."
+    )
     parser.add_argument("--output", help="Destination JSONL path.")
-    parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=100,
+        help="Number of prompts to sample deterministically; use 0 for the full split.",
+    )
     parser.add_argument("--num-generations", type=int, default=4)
     parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument("--temperature", type=float, default=1.0)
@@ -35,10 +45,35 @@ def parse_args():
     return parser.parse_args()
 
 
-def read_prompts(path, limit=None):
-    lines = Path(path).read_text(encoding="utf-8").splitlines()
-    prompts = [line.strip() for line in lines if line.strip() and not line.startswith("#")]
-    return prompts[:limit] if limit is not None else prompts
+def load_evaluation_rows(args):
+    if args.prompts:
+        lines = Path(args.prompts).read_text(encoding="utf-8").splitlines()
+        rows = [
+            {"source_index": index, "english": line.strip(), "reference_sanskrit": None}
+            for index, line in enumerate(lines)
+            if line.strip() and not line.startswith("#")
+        ]
+        source = str(Path(args.prompts))
+        fingerprint = None
+    else:
+        from datasets import load_dataset
+
+        dataset = load_dataset(args.dataset, split=args.split)
+        rows = [
+            {
+                "source_index": index,
+                "english": example["English"].strip(),
+                "reference_sanskrit": example["Sanskrit"].strip(),
+            }
+            for index, example in enumerate(dataset)
+        ]
+        source = f"{args.dataset}:{args.split}"
+        fingerprint = dataset._fingerprint
+
+    random.Random(args.seed).shuffle(rows)
+    if args.limit > 0:
+        rows = rows[: args.limit]
+    return rows, source, fingerprint
 
 
 def default_output_path(label):
@@ -57,9 +92,9 @@ def seed_generation(seed):
 
 def main():
     args = parse_args()
-    prompts = read_prompts(args.prompts, args.limit)
-    if not prompts:
-        raise ValueError(f"No evaluation prompts found in {args.prompts}")
+    evaluation_rows, source, fingerprint = load_evaluation_rows(args)
+    if not evaluation_rows:
+        raise ValueError(f"No evaluation prompts found in {source}")
 
     output_path = Path(args.output or default_output_path(args.label))
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,7 +104,8 @@ def main():
     all_rewards = []
 
     with output_path.open("w", encoding="utf-8") as output_file:
-        for prompt_index, english in enumerate(prompts):
+        for prompt_index, evaluation_row in enumerate(evaluation_rows):
+            english = evaluation_row["english"]
             seed_generation(args.seed + prompt_index)
             completions = generate_completions(
                 model,
@@ -90,8 +126,10 @@ def main():
                     "label": args.label,
                     "model": args.model,
                     "prompt_index": prompt_index,
+                    "source_index": evaluation_row["source_index"],
                     "generation_index": generation_index,
                     "english": english,
+                    "reference_sanskrit": evaluation_row["reference_sanskrit"],
                     "completion": completion,
                     "meter_reward": reward,
                 }
@@ -99,7 +137,7 @@ def main():
             output_file.flush()
             running_mean = statistics.fmean(all_rewards)
             print(
-                f"[{prompt_index + 1}/{len(prompts)}] "
+                f"[{prompt_index + 1}/{len(evaluation_rows)}] "
                 f"mean_reward={running_mean:.4f}",
                 flush=True,
             )
@@ -107,7 +145,9 @@ def main():
     summary = {
         "label": args.label,
         "model": args.model,
-        "prompts": len(prompts),
+        "source": source,
+        "source_fingerprint": fingerprint,
+        "prompts": len(evaluation_rows),
         "generations": len(all_rewards),
         "mean_meter_reward": statistics.fmean(all_rewards),
         "perfect_rate": sum(score == 1.0 for score in all_rewards) / len(all_rewards),
