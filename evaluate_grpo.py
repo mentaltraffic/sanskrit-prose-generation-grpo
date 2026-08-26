@@ -11,7 +11,8 @@ from pathlib import Path
 
 from inference_utils import generate_completions, load_model
 from rewards import (
-    is_slp1_format,
+    TARGET_SCHEME,
+    format_score,
     legacy_training_meter_reward,
     normalized_meter_reward,
 )
@@ -111,7 +112,7 @@ def main():
     model, processor, text_tokenizer = load_model(args.model)
     all_legacy_rewards = []
     all_normalized_rewards = []
-    all_slp1_formats = []
+    all_format_scores = []
 
     with output_path.open("w", encoding="utf-8") as output_file:
         for prompt_index, evaluation_row in enumerate(evaluation_rows):
@@ -128,18 +129,18 @@ def main():
             )
             legacy_rewards = legacy_training_meter_reward(completions)
             normalized_rewards = normalized_meter_reward(completions)
-            slp1_formats = [is_slp1_format(completion) for completion in completions]
+            format_scores = [format_score(completion) for completion in completions]
             all_legacy_rewards.extend(legacy_rewards)
             all_normalized_rewards.extend(normalized_rewards)
-            all_slp1_formats.extend(slp1_formats)
+            all_format_scores.extend(format_scores)
 
             for generation_index, (
                 completion,
                 legacy_reward,
                 normalized_reward,
-                slp1_format,
+                completion_format_score,
             ) in enumerate(
-                zip(completions, legacy_rewards, normalized_rewards, slp1_formats),
+                zip(completions, legacy_rewards, normalized_rewards, format_scores),
                 start=1,
             ):
                 row = {
@@ -151,7 +152,7 @@ def main():
                     "english": english,
                     "reference_sanskrit": evaluation_row["reference_sanskrit"],
                     "completion": completion,
-                    "slp1_format": slp1_format,
+                    "format_score": completion_format_score,
                     "legacy_training_meter_reward": legacy_reward,
                     "normalized_meter_reward": normalized_reward,
                 }
@@ -169,9 +170,12 @@ def main():
         "model": args.model,
         "source": source,
         "source_fingerprint": fingerprint,
+        "target_scheme": TARGET_SCHEME,
         "prompts": len(evaluation_rows),
         "generations": len(all_normalized_rewards),
-        "slp1_format_rate": sum(all_slp1_formats) / len(all_slp1_formats),
+        "mean_format_score": statistics.fmean(all_format_scores),
+        "in_format_rate": sum(score == 1.0 for score in all_format_scores)
+        / len(all_format_scores),
         "mean_legacy_training_meter_reward": statistics.fmean(all_legacy_rewards),
         "mean_normalized_meter_reward": statistics.fmean(all_normalized_rewards),
         "normalized_perfect_rate": sum(

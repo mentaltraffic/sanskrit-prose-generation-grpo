@@ -5,7 +5,13 @@ import getpass
 import os
 
 from inference_utils import generate_completions, load_model
-from rewards import is_slp1_format, normalize_completion_to_slp1, normalized_meter_reward
+from rewards import (
+    TARGET_SCHEME,
+    format_score,
+    is_target_format,
+    normalize_completion,
+    normalized_meter_reward,
+)
 
 
 def default_model_path():
@@ -17,7 +23,7 @@ def default_model_path():
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Generate SLP1 Sanskrit verse with the trained Gemma 4 model."
+        description=f"Generate {TARGET_SCHEME} Sanskrit verse with the trained Gemma 4 model."
     )
     parser.add_argument("--model", default=default_model_path())
     parser.add_argument(
@@ -48,14 +54,13 @@ def generate_and_print(model, processor, text_tokenizer, english, args):
     )
     rewards = normalized_meter_reward(completions)
     for index, (completion, reward) in enumerate(zip(completions, rewards), start=1):
-        slp1_candidate = is_slp1_format(completion)
         print(
             f"\n[{index}] normalized_meter_reward={reward:.3f} "
-            f"slp1_format={'yes' if slp1_candidate else 'no'}"
+            f"format_score={format_score(completion):.2f}"
         )
         print(completion)
-        if not slp1_candidate:
-            print(f"SLP1: {normalize_completion_to_slp1(completion)}")
+        if not is_target_format(completion):
+            print(f"{TARGET_SCHEME}: {normalize_completion(completion)}")
 
 
 def main():

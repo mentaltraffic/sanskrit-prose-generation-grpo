@@ -101,7 +101,7 @@ def generate_completions(
     temperature=1.0,
     top_k=64,
 ):
-    """Generate and clean one or more SLP1 verse candidates."""
+    """Generate and clean one or more verse candidates."""
     import torch
 
     from rewards import _clean_completion

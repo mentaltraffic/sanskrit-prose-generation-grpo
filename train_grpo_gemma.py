@@ -135,47 +135,19 @@ from datasets import load_dataset
 from indic_transliteration import sanscript
 from indic_transliteration.sanscript import transliterate
 
+from inference_utils import HUMAN_PROMPT
+
 dataset = load_dataset("sanganaka/anushtup")
-
-human_prompt = """
-### INSTRUCTION:
-The goal is to generate Sanskrit verse that follows the anushtup meter rules for the given input translation.
-RULES:
-Verse Rules:
-The verse contains 32 syllables/akshara and 4 padas in total.
-The verse is divided in 2 lines, each containing 16 syllables.
-Each line is divided into 2 padas (quartets),each containing exactly 8 syllables.
-The fifth syllable of every pada must be LAGHU or short.
-The sixth syllable of every pada must be GURU or long.
-The seventh syllable of the second and the fourth pada must be HRASVA
-The seventh letter of the first and third paada must be DEERGHA
-
-Syllable Rules:
-LAGHU vowels: a, i, u, f, x
-GURU vowels: A, I, U, F, X, e, E, o, O
-HRASVA vowels: a, i, u, f, x
-DEERGHA vowels: A, I, U, F, X, e, E, o, O
-
-Syllable is marked laghu, guru and hrasva, deergha based on the vowel it contains.
-Syllable containing anusvAra("M") or visarga("H") is always marked as guru.
-Syllable that is followed by a conjunct consonant (saMyuktAkzara) is always marked guru.
-
-Respond ONLY with the Sanskrit verse in SLP1 transliteration, nothing else.
-
-### INPUT:
-{}
-### RESPONSE:
-"""
 
 
 def build_prompt(example):
     english = example["English"].strip()
-    # Reference verse (SLP1) kept only for logging / optional eval, not for the reward.
-    reference_slp1 = transliterate(
-        example["Sanskrit"], sanscript.DEVANAGARI, sanscript.SLP1
+    # Reference verse kept only for logging / optional eval, not for the reward.
+    reference = transliterate(
+        example["Sanskrit"], sanscript.DEVANAGARI, sanscript.IAST
     ).strip()
 
-    messages = [{"role": "user", "content": human_prompt.format(english)}]
+    messages = [{"role": "user", "content": HUMAN_PROMPT.format(english)}]
     # No <|think|> token in the prompt => Gemma 4 answers directly, no reasoning block.
     prompt_text = tokenizer.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
@@ -183,7 +155,7 @@ def build_prompt(example):
     return {
         "prompt": prompt_text,   # TRL feeds this to the model
         "english": english,      # kept for logging/analysis (not used by the reward)
-        "reference": reference_slp1,
+        "reference": reference,
     }
 
 

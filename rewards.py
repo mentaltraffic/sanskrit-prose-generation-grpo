@@ -6,17 +6,24 @@ meter_reward -> SYNTACTIC correctness.
    verse actually scans as the anushtup / anuStubh meter, grading deterministically from
    the guru/laghu syllable-weight grid (robust against skrutable's permissive prose label).
 
-The model is trained/decoded in SLP1 transliteration (same as ref/train_ddp.py), so the
-raw completion is fed to skrutable with from_scheme='SLP'.
+The model is trained/decoded in IAST, which is what Gemma emits naturally and what
+skrutable itself outputs. `TARGET_SCHEME` below is the single place that choice is
+made; `format_reward` keeps the model honest about it so the metre scan is never
+handed text in a scheme it was not told about.
 """
 
 import re
 import unicodedata
 
 # ---------------------------------------------------------------------------
-# Config: tweak weights / target meter here.
+# Config: tweak scheme / weights / target meter here.
 # ---------------------------------------------------------------------------
+TARGET_SCHEME = "IAST"             # skrutable scheme name: IAST, SLP or DEV
 TARGET_METER = "anustubh"          # skrutable labels look like "anuṣṭubh (…analysis…)"
+
+# Reward is split so TRL logs the two axes separately; they sum to 1.0.
+FORMAT_REWARD_WEIGHT = 0.3
+METER_REWARD_WEIGHT = 0.7
 
 METER_WEIGHT = 1.0                 # reward for a PERFECT anuṣṭubh (skrutable is_perfect)
 METER_MAX_PARTIAL = 0.9            # cap for imperfect-but-anuṣṭubh-family verses
@@ -106,11 +113,16 @@ def _score_meter_verse(verse) -> float:
 
 # Gemma 4 wraps reasoning in `<|channel>thought ... <channel|>` before the answer.
 _THOUGHT_BLOCK = re.compile(r"<\|channel>thought\b.*?<channel\|>", re.DOTALL)
-# SLP1 is plain ASCII letters, so any angle-bracket span is a control token.
+# Verse text carries no angle brackets, so any such span is a control token.
 _SPECIAL_TOKEN = re.compile(r"<\|?[^<>]*\|?>")
 
 # ISO-15919 spellings the IAST transliteration table would otherwise leave intact.
 _IAST_VARIANTS = str.maketrans({"\u1e41": "\u1e43", "\u1e40": "\u1e42"})
+
+# IAST letters; aspirates are digraphs, so only base consonants appear.
+_IAST_LETTERS = frozenset(
+    "aāiīuūṛṝḷḹeo" "kgṅcjñṭḍṇtdnpbmyrlvśṣsh" "ṃḥ"
+)
 
 
 def _clean_completion(text: str) -> str:
@@ -124,39 +136,74 @@ def _clean_completion(text: str) -> str:
     return text.strip()
 
 
-def is_slp1_format(text: str) -> bool:
-    """Return whether a nonempty completion is an ASCII SLP1 candidate."""
-    cleaned = _clean_completion(text)
-    return bool(cleaned) and cleaned.isascii()
+def is_target_format(text: str) -> bool:
+    """Return whether every letter of a nonempty completion is valid for TARGET_SCHEME."""
+    return format_score(text) == 1.0
 
 
-def normalize_completion_to_slp1(text: str) -> str:
-    """Convert non-ASCII IAST output to SLP1 for meter-only evaluation."""
+def format_score(text: str) -> float:
+    """Fraction of letters that are valid for TARGET_SCHEME, as a graded 0..1 signal.
+
+    Graded rather than binary so GRPO always has a slope to climb; an all-or-nothing
+    gate collapses the advantage to zero when every sample in a group fails.
+    """
     cleaned = _clean_completion(text)
-    if not cleaned or cleaned.isascii():
-        return cleaned
+    if not cleaned:
+        return 0.0
+
+    if TARGET_SCHEME == "DEV":
+        letters = [c for c in cleaned if c.isalpha()]
+        valid = [c for c in letters if "\u0900" <= c <= "\u097f"]
+    elif TARGET_SCHEME == "SLP":
+        letters = [c for c in cleaned if c.isalpha()]
+        valid = [c for c in letters if c.isascii()]
+    else:
+        normalized = unicodedata.normalize("NFC", cleaned).translate(_IAST_VARIANTS)
+        letters = [c for c in normalized if c.isalpha()]
+        # Case-sensitive: IAST verse is lower-case, so SLP1's meaningful capitals
+        # (A, H, R, S...) are what separates the two schemes.
+        valid = [c for c in letters if c in _IAST_LETTERS]
+
+    if not letters:
+        return 0.0
+    return len(valid) / len(letters)
+
+
+def normalize_completion(text: str) -> str:
+    """Convert a completion into TARGET_SCHEME for evaluation of off-scheme output."""
+    cleaned = _clean_completion(text)
+    if not cleaned:
+        return ""
 
     from indic_transliteration import sanscript
     from indic_transliteration.sanscript import transliterate
 
-    normalized = unicodedata.normalize("NFC", cleaned)
-    # Models mix ISO-15919 dot-above anusvara with IAST's dot-below form.
-    normalized = normalized.translate(_IAST_VARIANTS)
-    return transliterate(normalized, sanscript.IAST, sanscript.SLP1)
+    target = {
+        "IAST": sanscript.IAST,
+        "SLP": sanscript.SLP1,
+        "DEV": sanscript.DEVANAGARI,
+    }[TARGET_SCHEME]
+
+    normalized = unicodedata.normalize("NFC", cleaned).translate(_IAST_VARIANTS)
+    source = sanscript.SLP1 if normalized.isascii() else sanscript.IAST
+    if source == target:
+        return normalized
+    return transliterate(normalized, source, target)
 
 
-def _meter_scores(completions, normalize_transliteration=False):
+def _meter_scores(completions, normalize_transliteration=False, from_scheme=None):
     mi = get_meter_identifier()
+    scheme = from_scheme or TARGET_SCHEME
     rewards = []
     for completion in completions:
         try:
             verse = (
-                normalize_completion_to_slp1(completion)
+                normalize_completion(completion)
                 if normalize_transliteration
                 else _clean_completion(completion)
             )
             result = mi.identify_meter(
-                verse, from_scheme="SLP", resplit_option="resplit_max"
+                verse, from_scheme=scheme, resplit_option="resplit_max"
             )
             score = _score_meter_verse(result) if verse else 0.0
         except Exception:
@@ -166,28 +213,31 @@ def _meter_scores(completions, normalize_transliteration=False):
 
 
 # ---------------------------------------------------------------------------
-# Reward function (TRL GRPOTrainer signature).
+# Reward functions (TRL GRPOTrainer signature).
 # Receives `completions` (list[str] for standard/text prompts) plus any extra
-# dataset columns as keyword args (ignored here).
+# dataset columns as keyword args (ignored here). TRL sums them and logs each
+# separately, so format and metre progress stay visible independently.
 # ---------------------------------------------------------------------------
+def format_reward(completions, **kwargs):
+    """Reward writing in TARGET_SCHEME, graded by fraction of valid letters."""
+    return [FORMAT_REWARD_WEIGHT * format_score(c) for c in completions]
+
+
 def meter_reward(completions, **kwargs):
-    """Grade SLP1 verse meter, assigning zero to non-ASCII transliteration."""
-    scores = _meter_scores(completions)
-    return [
-        score if is_slp1_format(completion) else 0.0
-        for completion, score in zip(completions, scores)
-    ]
+    """Grade metre on the raw completion, read as TARGET_SCHEME."""
+    return [METER_REWARD_WEIGHT * score for score in _meter_scores(completions)]
 
 
 def legacy_training_meter_reward(completions, **kwargs):
-    """Reproduce the completed run's reward, which assumed every output was SLP1."""
-    return _meter_scores(completions)
+    """Historical: the completed run's reward, which assumed every output was SLP1."""
+    return _meter_scores(completions, from_scheme="SLP")
 
 
 def normalized_meter_reward(completions, **kwargs):
-    """Evaluation only: score meter after converting non-ASCII IAST to SLP1."""
+    """Evaluation only: unweighted metre after converting output into TARGET_SCHEME."""
     return _meter_scores(completions, normalize_transliteration=True)
 
 
-# List handed to GRPOTrainer(reward_funcs=...). Logged as reward/meter_reward.
-REWARD_FUNCS = [meter_reward]
+# Handed to GRPOTrainer(reward_funcs=...); logged as rewards/format_reward and
+# rewards/meter_reward.
+REWARD_FUNCS = [format_reward, meter_reward]

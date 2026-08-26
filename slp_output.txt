@@ -1,0 +1,29 @@
+======================================================================
+REWARD CEILING ΓÇö sanganaka/anushtup:test
+scheme=SLP  resplit=resplit_max  n=200
+======================================================================
+  mean score   : 0.9980
+  perfect (1.0): 98.0%  (196)
+  zero    (0.0): 0.0%  (0)
+
+  score distribution:
+    0.90                                           4
+    1.00  #######################################  196
+
+  most common meter labels:
+     196  anuß╣úß╣¡ubh (1,2: pathy─ü; 3,4: pathy─ü)
+       2  anuß╣úß╣¡ubh (1,2: asam─½c─½n─ü, na pratham─üt snau; 3,4: pathy─ü)
+       1  anuß╣úß╣¡ubh (1,2: asam─½c─½n─ü, [vipul─üy─üm asaty─üm] ya[gaß╣çaß╕Ñ ayuja
+       1  anuß╣úß╣¡ubh (1,2: pathy─ü; 3,4: asam─½c─½n─ü, na pratham─üt snau)
+
+  example non-perfect reference verses:
+    score=0.90  label=anuß╣úß╣¡ubh (1,2: asam─½c─½n─ü, na pratham─üt snau; 3,4: pathy─ü)
+      tata: karuRaveditvAdaDarmo'yamiti dvija: .niSAmya rudatIM krOYcImidaM vacanamabravIt ..
+    score=0.90  label=anuß╣úß╣¡ubh (1,2: asam─½c─½n─ü, na pratham─üt snau; 3,4: pathy─ü)
+      KanyamAne tatastasmin dadfSu: parvatopamam..diSAgajaM virUpAkzaM DArayantaM mahItalam.
+    score=0.90  label=anuß╣úß╣¡ubh (1,2: asam─½c─½n─ü, [vipul─üy─üm asaty─üm] ya[gaß╣çaß╕Ñ ayuja
+      varuRasya tata: kanyA vAruRI raGunandana .utpapAta mahABAgA mArgamARA parigraham..
+
+======================================================================
+VERDICT: the reward is reachable on real verses.
+======================================================================
