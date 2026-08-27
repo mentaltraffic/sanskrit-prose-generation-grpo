@@ -66,6 +66,14 @@ The train split has 8,306 prompts and rollouts run through Transformers
 **one** epoch; override the budget with `GRPO_EPOCHS` or cap it hard with
 `GRPO_MAX_STEPS` (optimizer steps, `-1` disables the cap).
 
+bf16 weights are ~16 GB and the run needs roughly 20 GB in total. The Sanskrit
+server's two L40s are shared, so check `nvidia-smi` before launching and pin to
+the emptier card:
+
+```bash
+CUDA_VISIBLE_DEVICES=1 python -u train_grpo_gemma.py
+```
+
 Single-node multi-GPU is possible via `accelerate launch`, but the simplest
 reliable setup is **one process with one GPU** doing both rollouts and training.
 Scale up only after a single-GPU run works.
