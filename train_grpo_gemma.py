@@ -27,7 +27,9 @@ os.makedirs(OUTPUT_ROOT, exist_ok=True)
 # Set GRPO_REPORT_TO=wandb to opt in; logging is disabled by default.
 REPORT_TO = os.environ.get("GRPO_REPORT_TO", "none")
 os.environ.setdefault("WANDB_PROJECT", "chandomitra")
-os.environ.setdefault("WANDB_LOG_MODEL", "checkpoint")
+# "checkpoint" stages a copy of every save under WANDB_DIR and ignores
+# save_total_limit; on a shared disk that is not affordable.
+os.environ.setdefault("WANDB_LOG_MODEL", "false")
 os.environ.setdefault("WANDB_DIR", os.path.join(OUTPUT_ROOT, "wandb"))
 
 # --- process / device bookkeeping (same pattern as train_ddp_dev.py) -------
@@ -279,13 +281,28 @@ if os.environ.get("GRPO_DEBUG_SHAPES") == "1":
 trainer.train()
 
 if IS_MAIN_PROCESS:
-    model.save_pretrained_merged(
-        os.path.join(OUTPUT_ROOT, "chandomitra_gemma4_e4b_grpo"),
-        tokenizer,
-        save_method="merged_16bit",
-    )
-    # LoRA-only adapter (small, handy for resuming / sharing):
-    model.save_lora(os.path.join(OUTPUT_ROOT, "chandomitra_gemma4_e4b_grpo_lora"))
+    # Adapter first: a few hundred MB, and the only artifact 19 GPU-hours cannot
+    # reproduce. The 16-bit merge needs ~16 GB and must never be able to lose it.
+    lora_dir = os.path.join(OUTPUT_ROOT, "chandomitra_gemma4_e4b_grpo_lora")
+    model.save_lora(lora_dir)
+    print(f"LoRA adapter saved to {lora_dir}", flush=True)
+
+    if os.environ.get("GRPO_SKIP_MERGE") == "1":
+        print("GRPO_SKIP_MERGE=1, skipping merged_16bit export", flush=True)
+    else:
+        try:
+            model.save_pretrained_merged(
+                os.path.join(OUTPUT_ROOT, "chandomitra_gemma4_e4b_grpo"),
+                tokenizer,
+                save_method="merged_16bit",
+            )
+        except Exception as exc:
+            print(
+                f"Merged export failed: {exc}\n"
+                f"Training is not lost: re-run the merge from {lora_dir} after "
+                f"freeing disk, or set GRPO_SKIP_MERGE=1 and serve the adapter directly.",
+                flush=True,
+            )
 
 
 if __name__ == "__main__":
