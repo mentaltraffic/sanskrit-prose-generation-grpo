@@ -398,6 +398,66 @@ evaluation from training.
 - `test_rewards.py` asserts the incentive ordering: perfect IAST `1.000` >
   defective IAST `0.825` > correct Sanskrit in the wrong scheme `0.556` >
   English `0.293`.
+
+### 2026-09-03 — IAST retrain: no reward hacking, still zero perfect verses
+
+2077 steps (1 epoch), 19h25m, final `reward ≈ 0.589`
+(`format_reward` 0.300, `meter_reward` 0.289). The run itself succeeded; only
+the trailing `save_pretrained_merged` failed, because `/home` is a shared 3.8 TB
+volume sitting at 100% with 12 GB free and a `merged_16bit` export of E4B needs
+~16 GB. The adapter in `grpo_checkpoints_gemma4_e4b/checkpoint-2077` is the
+artifact; no merge is required, since `load_model` accepts a LoRA directory.
+
+**Evidence** — same official `sanganaka/anushtup` `test` prompts (fingerprint
+`1e710755685ca5de`), 100 prompts × 4 samples, seed 3407, both arms scored under
+the new IAST reward:
+
+| Metric | Base | Trained | Change |
+|--------|------|---------|--------|
+| `mean_normalized_meter_reward` (honest) | 0.2666 | 0.4619 | **+73%** |
+| `normalized_nonzero_rate` | 0.520 | 0.8725 | +0.353 |
+| `normalized_perfect_rate` | 0.000 | 0.000 | **none** |
+| `mean_format_score` | 0.9985 | 0.9992 | +0.001 |
+| `in_format_rate` | 0.9175 | 0.9450 | +0.028 |
+| `mean_legacy_training_meter_reward` | 0.0545 | 0.1819 | 3.3× |
+
+Not comparable to the 2026-08-26 table: that run scored under the broken SLP1
+scan, this one under the IAST reward. Caveat within this table: the base arm ran
+with the model dispatched across two GPUs and the trained arm on one, so device
+placement differs. The +0.195 gap is far too large to be a placement artifact,
+but the paired test of section 6 should use arms collected identically.
+
+**The reward hack is gone.** Last time the hackable metric rose 10× while the
+honest one rose 21% — that ratio was the signature. This time the metric the
+trainer optimised *is* the honest one, and it rose 73%. `legacy` is now only a
+diagnostic, since it still scans IAST as SLP1.
+
+**But `normalized_perfect_rate` is still 0.000 across 400 generations**, against
+98% for the dataset's own reference verses (`check_reward_ceiling.py`). GRPO
+moved the model from "usually wrong" to "usually partially right" — the
+nonzero rate nearly doubled to 0.87, so far fewer complete misses — without
+producing a single metrically perfect anuṣṭubh. Partial pāda credit is
+reachable by gradient; the conjunction of all four pādas is not, from this
+starting point. That is the case for section 5 of `REWARD_REDESIGN.md`: SFT to
+teach the form, then GRPO to refine metre.
+
+`mean_format_score = 0.9985` on the **untrained** model is the other notable
+figure.
+The base already emits near-perfect IAST, which matches the training log's
+`rewards/format_reward/mean: 0.300, std: 0.000` — the format term was pinned at
+its ceiling in every group, so it contributed exactly nothing to the within-group
+advantage. The intended 0.3/0.7 split was 0/1.0 in practice, and the "slope to
+climb" argument for grading `format_reward` turned out to be unnecessary here.
+
+**Two operational lessons:**
+
+- `save_pretrained_merged` ran *before* `save_lora`, so a disk failure in an
+  optional export could discard the whole run. Order reversed, merge wrapped and
+  made skippable via `GRPO_SKIP_MERGE=1`.
+- `device_map="auto"` split E4B across both L40s during evaluation and produced
+  a `CUDA error: device-side assert triggered` whose traceback pointed at an
+  unrelated `RMSNorm`. Pinning with `CUDA_VISIBLE_DEVICES` fixed it. Evaluate on
+  one visible GPU.
 - `check_reward_ceiling.py` added; remaining plan in `REWARD_REDESIGN.md`.
 
 **Caveat before quoting the +21%:** with 100 prompts × 4 correlated samples and
