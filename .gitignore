@@ -24,3 +24,7 @@ dataset/
 .vscode/
 .idea/
 .DS_Store
+
+!/chandomitra_gemma4_e4b_grpo_lora/
+!/chandomitra_gemma4_e4b_grpo_lora/adapter_model.safetensors
+!/checkpoint-2077/adapter_model.safetensors
